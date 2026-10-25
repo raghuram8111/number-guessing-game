@@ -1,463 +1,624 @@
 import random
 import streamlit as st
 
+# =========================================================
+# PAGE CONFIGURATION
+# =========================================================
+
 st.set_page_config(
-    page_title="GUESS LAB ARCADE",
+    page_title="Number Guessing Game",
     page_icon="🎯",
-    layout="wide",
+    layout="centered",
     initial_sidebar_state="collapsed",
 )
 
-# ---------- GAME STATE ----------
-def new_game():
+# =========================================================
+# SESSION STATE INITIALIZATION
+# =========================================================
+
+defaults = {
+    "secret": random.randint(1, 100),
+    "attempts": 0,
+    "history": [],
+    "score": 100,
+    "best_score": 0,
+    "game_over": False,
+    "won": False,
+    "message": "Find the hidden number!",
+    "message_type": "info",
+    "theme": "Dark",
+}
+
+for key, value in defaults.items():
+    if key not in st.session_state:
+        st.session_state[key] = value
+
+
+# =========================================================
+# GAME FUNCTIONS
+# =========================================================
+
+def restart_game():
+    """Start a fresh game while preserving the best score and theme."""
     st.session_state.secret = random.randint(1, 100)
-    st.session_state.guesses = []
+    st.session_state.attempts = 0
+    st.session_state.history = []
     st.session_state.score = 100
-    st.session_state.status = "playing"
-    st.session_state.message = "FIND THE SECRET NUMBER!"
-    st.session_state.next_guess = 50
+    st.session_state.game_over = False
+    st.session_state.won = False
+    st.session_state.message = "Find the hidden number!"
+    st.session_state.message_type = "info"
 
 
-if "secret" not in st.session_state:
-    new_game()
+def make_guess():
+    """Process the submitted guess."""
+    if st.session_state.game_over:
+        return
 
-if "theme" not in st.session_state:
-    st.session_state.theme = "Dark"
+    guess = st.session_state.get("guess_input")
 
-# ---------- THEME ----------
-st.session_state.theme = st.radio(
-    "THEME",
-    ["Dark", "Light"],
-    horizontal=True,
-    key="theme_choice",
-    label_visibility="collapsed",
-)
+    if guess is None:
+        st.session_state.message = "Enter a number before locking in!"
+        st.session_state.message_type = "warning"
+        return
 
-dark = st.session_state.theme == "Dark"
+    guess = int(guess)
 
-if dark:
-    bg = "#080817"
-    panel = "#15152B"
-    panel2 = "#20203B"
-    text = "#F6F3FF"
-    muted = "#AAA9CB"
-    accent = "#B66DFF"
-    accent2 = "#38E8FF"
-    border = "#39345D"
-    good = "#5DFFB1"
-    danger = "#FF6289"
-    chip = "#252343"
-else:
-    bg = "#F3F0FF"
-    panel = "#FFFFFF"
-    panel2 = "#EAE5FF"
-    text = "#241744"
-    muted = "#71668F"
-    accent = "#7A35DF"
-    accent2 = "#087EAC"
-    border = "#D5C9F2"
-    good = "#087D52"
-    danger = "#D52D55"
-    chip = "#E9E1FF"
+    if not 1 <= guess <= 100:
+        st.session_state.message = "Your guess must be between 1 and 100."
+        st.session_state.message_type = "warning"
+        return
 
-# ---------- ARCADE DESIGN ----------
-st.markdown(f"""
-<style>
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@500;600;700;800;900&family=Inter:wght@400;500;600;700;800&display=swap');
+    if guess in [item["guess"] for item in st.session_state.history]:
+        st.session_state.message = "You already tried that number. Try another!"
+        st.session_state.message_type = "warning"
+        return
 
-:root {{
-    --bg:{bg};
-    --panel:{panel};
-    --panel2:{panel2};
-    --text:{text};
-    --muted:{muted};
-    --accent:{accent};
-    --accent2:{accent2};
-    --border:{border};
-    --good:{good};
-    --danger:{danger};
-    --chip:{chip};
-}}
+    st.session_state.attempts += 1
 
-.stApp {{
-    background:
-        radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--accent) 20%, transparent), transparent 48%),
-        radial-gradient(ellipse at 0% 65%, color-mix(in srgb, var(--accent2) 10%, transparent), transparent 45%),
-        var(--bg);
-    color:var(--text);
-    font-family:'Inter',sans-serif;
-}}
+    secret = st.session_state.secret
+    attempts = st.session_state.attempts
 
-header,footer,#MainMenu {{visibility:hidden;}}
-.block-container {{max-width:1050px;padding:1rem 1.3rem 2rem;}}
+    st.session_state.history.append({
+        "guess": guess,
+        "result": (
+            "correct" if guess == secret
+            else "high" if guess > secret
+            else "low"
+        )
+    })
 
-h1,h2,h3,p,label {{color:var(--text);}}
+    if guess == secret:
+        st.session_state.won = True
+        st.session_state.game_over = True
 
-.brand {{
-    text-align:center;
-    font-family:'Orbitron',sans-serif;
-    font-weight:900;
-    font-size:clamp(1.8rem,5vw,3rem);
-    letter-spacing:clamp(2px,1vw,7px);
-    color:var(--accent2);
-    text-shadow:0 0 22px color-mix(in srgb,var(--accent2) 45%,transparent);
-}}
+        # First-guess win = 100 points.
+        points = max(10, 110 - (attempts * 10))
+        st.session_state.score = points
+        st.session_state.best_score = max(
+            st.session_state.best_score,
+            points
+        )
 
-.subtitle {{
-    text-align:center;
-    font-size:.7rem;
-    letter-spacing:3px;
-    color:var(--muted);
-    margin:5px 0 24px;
-}}
+        st.session_state.message = (
+            f"🎉 Incredible! You found {secret} in {attempts} "
+            f"{'attempt' if attempts == 1 else 'attempts'}!"
+        )
+        st.session_state.message_type = "success"
 
-div[role="radiogroup"] {{justify-content:center;gap:10px;}}
-div[role="radiogroup"] label {{
-    background:var(--panel);
-    border:1px solid var(--border);
-    border-radius:20px;
-    padding:5px 12px;
-}}
-div[role="radiogroup"] label p {{font-size:.8rem;margin:0;}}
+    elif attempts >= 10:
+        st.session_state.score = 0
+        st.session_state.game_over = True
+        st.session_state.message = (
+            f"💥 Game over! The hidden number was {secret}."
+        )
+        st.session_state.message_type = "error"
 
-.stats {{
-    display:grid;
-    grid-template-columns:repeat(3,minmax(0,1fr));
-    gap:10px;
-    margin:20px 0;
-}}
+    else:
+        st.session_state.score = max(0, 100 - attempts * 10)
 
-.stat {{
-    background:var(--panel);
-    border:1px solid var(--border);
-    border-radius:15px;
-    text-align:center;
-    padding:13px 6px;
-    box-shadow:0 8px 24px #0000000b;
-}}
+        if guess < secret:
+            st.session_state.message = (
+                "📈 Too low! The mystery number is HIGHER."
+            )
+        else:
+            st.session_state.message = (
+                "📉 Too high! The mystery number is LOWER."
+            )
 
-.stat-label {{
-    font-size:.65rem;
-    letter-spacing:1.4px;
-    color:var(--muted);
-}}
+        st.session_state.message_type = "info"
 
-.stat-value {{
-    font-family:'Orbitron',sans-serif;
-    font-size:clamp(1.1rem,3vw,1.7rem);
-    font-weight:800;
-    color:var(--accent2);
-    margin-top:7px;
-}}
 
-.arena {{
-    background:linear-gradient(145deg,var(--panel),var(--panel2));
-    border:1px solid var(--border);
-    border-radius:24px;
-    padding:24px;
-    text-align:center;
-    box-shadow:0 18px 45px #00000016;
-}}
+# =========================================================
+# THEME SELECTION
+# =========================================================
 
-.arena-label {{
-    font-family:'Orbitron',sans-serif;
-    font-size:.8rem;
-    letter-spacing:2px;
-    color:var(--muted);
-}}
-
-.orb {{
-    width:clamp(165px,27vw,230px);
-    height:clamp(165px,27vw,230px);
-    margin:25px auto;
-    border-radius:50%;
-    display:flex;
-    flex-direction:column;
-    align-items:center;
-    justify-content:center;
-    position:relative;
-    background:
-        radial-gradient(circle at 35% 25%, color-mix(in srgb,var(--accent) 45%,var(--panel)), var(--panel) 70%);
-    border:3px solid var(--accent2);
-    box-shadow:
-        0 0 0 9px color-mix(in srgb,var(--accent2) 8%,transparent),
-        0 0 35px color-mix(in srgb,var(--accent2) 25%,transparent),
-        inset 0 0 28px color-mix(in srgb,var(--accent) 20%,transparent);
-}}
-
-.orb-number {{
-    font-family:'Orbitron',sans-serif;
-    font-size:clamp(3.2rem,8vw,5rem);
-    font-weight:900;
-    color:var(--text);
-    line-height:1;
-}}
-
-.orb-caption {{
-    font-size:.65rem;
-    letter-spacing:2px;
-    color:var(--accent2);
-    margin-top:12px;
-}}
-
-.feedback {{
-    background:var(--panel);
-    border:1px solid var(--border);
-    border-radius:14px;
-    padding:15px 10px;
-    font-weight:700;
-    font-size:.95rem;
-    line-height:1.5;
-    margin:12px 0;
-}}
-
-.hint {{
-    color:var(--muted);
-    font-size:.78rem;
-    letter-spacing:1px;
-}}
-
-.section-title {{
-    font-family:'Orbitron',sans-serif;
-    font-size:.82rem;
-    letter-spacing:1.5px;
-    margin:20px 0 12px;
-}}
-
-div[data-testid="stNumberInput"] input {{
-    background:var(--panel);
-    color:var(--text);
-    border:1px solid var(--border);
-    border-radius:14px;
-    text-align:center;
-    font-family:'Orbitron',sans-serif;
-    font-size:1.4rem;
-    min-height:55px;
-}}
-
-div[data-testid="stNumberInput"] label {{color:var(--muted);}}
-
-div[data-testid="stFormSubmitButton"] button,
-div.stButton button {{
-    width:100%;
-    min-height:52px;
-    border:0;
-    border-radius:14px;
-    background:linear-gradient(110deg,var(--accent),var(--accent2));
-    color:white;
-    font-weight:900;
-    font-size:.95rem;
-    letter-spacing:1px;
-    box-shadow:0 7px 20px color-mix(in srgb,var(--accent) 25%,transparent);
-}}
-
-div[data-testid="stFormSubmitButton"] button:hover,
-div.stButton button:hover {{
-    filter:brightness(1.1);
-    color:white;
-    box-shadow:0 0 24px color-mix(in srgb,var(--accent2) 30%,transparent);
-}}
-
-.history {{
-    display:flex;
-    flex-wrap:wrap;
-    justify-content:center;
-    gap:8px;
-}}
-
-.guess-chip {{
-    background:var(--chip);
-    border:1px solid var(--border);
-    border-radius:10px;
-    padding:9px 12px;
-    font-family:'Orbitron',sans-serif;
-    font-size:.8rem;
-    color:var(--text);
-}}
-
-.footer {{
-    text-align:center;
-    font-size:.65rem;
-    color:var(--muted);
-    letter-spacing:2px;
-    margin-top:30px;
-}}
-
-div[data-testid="stProgressBar"] > div > div {{
-    background:linear-gradient(90deg,var(--accent),var(--accent2));
-}}
-div[data-testid="stProgressBar"] > div {{background:var(--panel2);}}
-
-@media(max-width:650px) {{
-    .block-container {{padding:.65rem .65rem 1.2rem;}}
-    .brand {{font-size:1.75rem;letter-spacing:3px;}}
-    .subtitle {{font-size:.59rem;letter-spacing:1.5px;margin-bottom:15px;}}
-    .stats {{grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:14px 0;}}
-    .stat {{padding:11px 3px;border-radius:12px;}}
-    .stat-label {{font-size:.52rem;letter-spacing:.4px;}}
-    .stat-value {{font-size:1rem;margin-top:6px;}}
-    .arena {{padding:17px 12px;border-radius:20px;}}
-    .orb {{width:160px;height:160px;margin:20px auto;}}
-    .orb-number {{font-size:3.4rem;}}
-    .feedback {{font-size:.88rem;padding:13px 8px;}}
-    div[data-testid="stNumberInput"] input {{min-height:58px;font-size:1.3rem;}}
-    div[data-testid="stFormSubmitButton"] button,
-    div.stButton button {{min-height:55px;font-size:.9rem;}}
-    .section-title {{font-size:.75rem;}}
-    .guess-chip {{padding:8px 10px;font-size:.72rem;}}
-}}
-
-@media(max-width:360px) {{
-    .block-container {{padding-left:.4rem;padding-right:.4rem;}}
-    .brand {{font-size:1.5rem;}}
-    .stat-label {{font-size:.48rem;}}
-    .stat-value {{font-size:.9rem;}}
-    .orb {{width:145px;height:145px;}}
-}}
-</style>
-""", unsafe_allow_html=True)
-
-# ---------- HEADER ----------
-st.markdown('<div class="brand">GUESS LAB</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="subtitle">⚡ THE NUMBER HUNT ARCADE ⚡</div>',
+    """
+    <style>
+    /* Hide default Streamlit chrome */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header[data-testid="stHeader"] {background: transparent;}
+    [data-testid="stSidebar"] {display: none;}
+
+    /* Main layout */
+    .block-container {
+        max-width: 760px;
+        padding-top: 1.5rem;
+        padding-bottom: 3rem;
+    }
+
+    /* Theme selector */
+    div[role="radiogroup"] {
+        display: flex;
+        justify-content: center;
+        gap: 12px;
+        flex-wrap: wrap;
+    }
+
+    div[role="radiogroup"] label {
+        border-radius: 12px;
+        padding: 7px 15px;
+        font-weight: 600;
+    }
+
+    /* Game title */
+    .game-title {
+        text-align: center;
+        font-size: clamp(2.1rem, 7vw, 3.7rem);
+        font-weight: 900;
+        letter-spacing: -2px;
+        line-height: 1.1;
+        margin-top: 12px;
+        margin-bottom: 8px;
+    }
+
+    .game-subtitle {
+        text-align: center;
+        font-size: 1rem;
+        margin-bottom: 28px;
+    }
+
+    /* Mystery orb */
+    .orb {
+        width: clamp(145px, 35vw, 190px);
+        height: clamp(145px, 35vw, 190px);
+        margin: 18px auto 28px;
+        border-radius: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-size: clamp(4rem, 14vw, 6rem);
+        font-weight: 900;
+        color: white;
+        background: radial-gradient(
+            circle at 35% 25%,
+            #7b8cff,
+            #5b3ed6 55%,
+            #26134d
+        );
+        box-shadow:
+            0 0 25px rgba(112, 92, 255, 0.35),
+            inset -12px -15px 30px rgba(0, 0, 0, 0.28),
+            inset 8px 8px 24px rgba(255, 255, 255, 0.22);
+        animation: float 3s ease-in-out infinite;
+    }
+
+    @keyframes float {
+        0%, 100% { transform: translateY(0); }
+        50% { transform: translateY(-7px); }
+    }
+
+    /* Stats */
+    .stats-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin: 15px 0 24px;
+    }
+
+    .stat-card {
+        padding: 16px 8px;
+        border-radius: 16px;
+        text-align: center;
+        border: 1px solid var(--card-border);
+        background: var(--card-bg);
+        min-width: 0;
+    }
+
+    .stat-label {
+        font-size: 0.75rem;
+        font-weight: 700;
+        letter-spacing: 1px;
+        text-transform: uppercase;
+        opacity: 0.72;
+        margin-bottom: 6px;
+    }
+
+    .stat-value {
+        font-size: clamp(1.4rem, 5vw, 2rem);
+        font-weight: 900;
+        line-height: 1.2;
+    }
+
+    /* Section cards */
+    .game-card {
+        border: 1px solid var(--card-border);
+        background: var(--card-bg);
+        border-radius: 18px;
+        padding: 20px;
+        margin-top: 18px;
+    }
+
+    .section-title {
+        font-size: 1.15rem;
+        font-weight: 800;
+        margin-bottom: 8px;
+    }
+
+    .muted {
+        opacity: 0.72;
+        font-size: 0.9rem;
+    }
+
+    /* Guess history */
+    .history-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 12px;
+    }
+
+    .history-chip {
+        border-radius: 10px;
+        padding: 8px 12px;
+        font-size: 0.9rem;
+        font-weight: 800;
+        border: 1px solid var(--card-border);
+    }
+
+    .chip-low {
+        background: rgba(46, 160, 120, 0.13);
+    }
+
+    .chip-high {
+        background: rgba(235, 90, 90, 0.13);
+    }
+
+    .chip-correct {
+        background: rgba(120, 95, 255, 0.2);
+    }
+
+    /* Buttons */
+    div.stButton > button,
+    div[data-testid="stFormSubmitButton"] > button {
+        min-height: 48px;
+        width: 100%;
+        border-radius: 13px;
+        font-weight: 800;
+        transition: transform 0.15s ease;
+    }
+
+    div.stButton > button:hover,
+    div[data-testid="stFormSubmitButton"] > button:hover {
+        transform: translateY(-2px);
+    }
+
+    /* Number input */
+    div[data-testid="stNumberInput"] input {
+        min-height: 52px;
+        font-size: 1.3rem;
+        font-weight: 800;
+        text-align: center;
+    }
+
+    /* Mobile adjustments */
+    @media (max-width: 480px) {
+        .block-container {
+            padding-left: 1rem;
+            padding-right: 1rem;
+            padding-top: 1rem;
+        }
+
+        .game-title {
+            letter-spacing: -1px;
+        }
+
+        .game-card {
+            padding: 15px;
+            border-radius: 15px;
+        }
+
+        .stats-grid {
+            gap: 7px;
+        }
+
+        .stat-card {
+            padding: 12px 4px;
+            border-radius: 12px;
+        }
+
+        .stat-label {
+            font-size: 0.65rem;
+            letter-spacing: 0.5px;
+        }
+
+        div[role="radiogroup"] {
+            gap: 5px;
+        }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+        .orb {
+            animation: none;
+        }
+    }
+    </style>
+    """,
     unsafe_allow_html=True,
 )
 
-attempts = len(st.session_state.guesses)
-remaining = max(0, 10 - attempts)
+# Theme controls using radio buttons
+theme_col1, theme_col2, theme_col3 = st.columns([1, 2, 1])
 
-st.markdown(f"""
-<div class="stats">
-  <div class="stat"><div class="stat-label">SCORE</div>
-  <div class="stat-value">{st.session_state.score}<span style="font-size:.7rem">/100</span></div></div>
-  <div class="stat"><div class="stat-label">ATTEMPTS</div>
-  <div class="stat-value">{attempts}/10</div></div>
-  <div class="stat"><div class="stat-label">LEFT</div>
-  <div class="stat-value">{remaining}</div></div>
-</div>
-""", unsafe_allow_html=True)
+with theme_col2:
+    st.radio(
+        "Choose appearance",
+        options=["Dark", "Light"],
+        horizontal=True,
+        key="theme",
+        label_visibility="collapsed",
+    )
 
-# ---------- GAME ARENA ----------
-if st.session_state.status == "won":
-    orb_number, orb_caption = "🏆", "YOU WIN!"
-elif st.session_state.status == "lost":
-    orb_number, orb_caption = str(st.session_state.secret), "ANSWER REVEALED"
+# =========================================================
+# APPLY SELECTED THEME
+# =========================================================
+
+if st.session_state.theme == "Dark":
+    bg = "#0B1020"
+    text_color = "#F2F4FF"
+    muted_color = "#A3ADC7"
+    card_bg = "#151C30"
+    card_border = "#29334D"
+    input_bg = "#11182A"
+    accent = "#8875FF"
 else:
-    orb_number, orb_caption = "?", "SECRET NUMBER"
+    bg = "#F3F5FC"
+    text_color = "#19213A"
+    muted_color = "#64708A"
+    card_bg = "#FFFFFF"
+    card_border = "#DDE3F0"
+    input_bg = "#FFFFFF"
+    accent = "#6447E8"
 
-st.markdown(f"""
-<div class="arena">
-  <div class="arena-label">◈ TARGET CHAMBER ◈</div>
-  <div class="orb">
-    <div class="orb-number">{orb_number}</div>
-    <div class="orb-caption">{orb_caption}</div>
-  </div>
-  <div class="feedback">{st.session_state.message}</div>
-  <div class="hint">RANGE 01—100 &nbsp; • &nbsp; 10 CHANCES</div>
-</div>
-""", unsafe_allow_html=True)
+st.markdown(
+    f"""
+    <style>
+    :root {{
+        --card-bg: {card_bg};
+        --card-border: {card_border};
+    }}
 
-st.markdown('<div class="section-title">🎮 YOUR MOVE</div>', unsafe_allow_html=True)
+    .stApp {{
+        background: {bg};
+        color: {text_color};
+    }}
 
-if st.session_state.status == "playing":
-    with st.form("guess_form", clear_on_submit=False):
-        guess = st.number_input(
-            "Choose your number",
+    .stApp,
+    .stApp p,
+    .stApp label,
+    .stApp h1,
+    .stApp h2,
+    .stApp h3 {{
+        color: {text_color};
+    }}
+
+    .game-subtitle,
+    .muted {{
+        color: {muted_color} !important;
+    }}
+
+    div[data-testid="stNumberInput"] input {{
+        background: {input_bg};
+        color: {text_color};
+        border-color: {card_border};
+    }}
+
+    div.stButton > button,
+    div[data-testid="stFormSubmitButton"] > button {{
+        border: 1px solid {accent};
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
+
+# =========================================================
+# HEADER
+# =========================================================
+
+st.markdown(
+    '<div class="game-title">NUMBER GUESSING GAME</div>',
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    '<div class="game-subtitle">'
+    '🎯 One mystery number. Ten chances. Can you beat the game?'
+    '</div>',
+    unsafe_allow_html=True,
+)
+
+# =========================================================
+# MYSTERY ORB
+# =========================================================
+
+if st.session_state.won:
+    orb_text = str(st.session_state.secret)
+elif st.session_state.game_over:
+    orb_text = "💥"
+else:
+    orb_text = "?"
+
+st.markdown(
+    f'<div class="orb">{orb_text}</div>',
+    unsafe_allow_html=True,
+)
+
+# =========================================================
+# LIVE STATS
+# =========================================================
+
+remaining = max(0, 10 - st.session_state.attempts)
+
+st.markdown(
+    f"""
+    <div class="stats-grid">
+        <div class="stat-card">
+            <div class="stat-label">Your Score</div>
+            <div class="stat-value">{st.session_state.score}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Attempts Left</div>
+            <div class="stat-value">{remaining}</div>
+        </div>
+        <div class="stat-card">
+            <div class="stat-label">Best Score</div>
+            <div class="stat-value">{st.session_state.best_score}</div>
+        </div>
+    </div>
+    """,
+    unsafe_allow_html=True,
+)
+
+# =========================================================
+# GUESS FORM
+# =========================================================
+
+st.markdown(
+    '<div class="game-card">'
+    '<div class="section-title">🔐 Crack the Code</div>'
+    '<div class="muted">Choose a number between 1 and 100.</div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
+
+if not st.session_state.game_over:
+    with st.form("guess_form", clear_on_submit=True):
+        st.number_input(
+            "Enter your guess",
             min_value=1,
             max_value=100,
-            value=int(st.session_state.next_guess),
+            value=None,
             step=1,
+            placeholder="Enter 1–100",
             key="guess_input",
-            label_visibility="collapsed",
         )
-        submitted = st.form_submit_button("⚡ LOCK IN GUESS")
 
-    if submitted:
-        submitted_guess = int(guess)
+        st.form_submit_button(
+            "⚡ LOCK IN GUESS",
+            on_click=make_guess,
+            use_container_width=True,
+        )
 
-        if submitted_guess in st.session_state.guesses:
-            st.session_state.message = (
-                f"🔁 {submitted_guess} WAS ALREADY TRIED! PICK ANOTHER."
-            )
-        else:
-            st.session_state.guesses.append(submitted_guess)
-            attempts = len(st.session_state.guesses)
-
-            if submitted_guess == st.session_state.secret:
-                st.session_state.status = "won"
-                st.session_state.score = max(10, 110 - attempts * 10)
-                st.session_state.message = (
-                    f"🎉 PERFECT HIT! YOU FOUND {submitted_guess} "
-                    f"IN {attempts} ATTEMPT(S)!"
-                )
-                st.balloons()
-
-            elif attempts >= 10:
-                st.session_state.status = "lost"
-                st.session_state.score = 0
-                st.session_state.message = (
-                    f"💥 GAME OVER! THE NUMBER WAS {st.session_state.secret}."
-                )
-
-            else:
-                st.session_state.score = max(0, 100 - attempts * 10)
-                difference = abs(st.session_state.secret - submitted_guess)
-
-                if submitted_guess < st.session_state.secret:
-                    direction = "HIGHER ⬆️"
-                else:
-                    direction = "LOWER ⬇️"
-
-                if difference <= 5:
-                    st.session_state.message = f"🔥 SO CLOSE! GO {direction}"
-                elif difference <= 15:
-                    st.session_state.message = f"🎯 GETTING WARM! GO {direction}"
-                else:
-                    st.session_state.message = f"❄️ NOT QUITE! GO {direction}"
-
-            st.session_state.next_guess = submitted_guess
-
-        st.rerun()
 else:
-    if st.session_state.status == "won":
-        st.success(f"VICTORY! FINAL SCORE: {st.session_state.score}/100")
+    if st.session_state.won:
+        st.success("🏆 YOU WIN! The mystery number is yours.")
     else:
-        st.error("ROUND OVER — TAKE ANOTHER SHOT!")
+        st.error("💥 GAME OVER! Better luck next time.")
 
-    if st.button("🔄 PLAY AGAIN"):
-        new_game()
-        st.rerun()
+    st.button(
+        "🔄 PLAY AGAIN",
+        on_click=restart_game,
+        use_container_width=True,
+    )
 
-# ---------- PROGRESS ----------
-st.markdown('<div class="section-title">⚡ ROUND PROGRESS</div>', unsafe_allow_html=True)
-st.progress(attempts / 10)
+# =========================================================
+# FEEDBACK
+# =========================================================
 
-# ---------- GUESS HISTORY ----------
-st.markdown('<div class="section-title">▦ YOUR GUESSES</div>', unsafe_allow_html=True)
+if st.session_state.message_type == "success":
+    st.success(st.session_state.message)
+elif st.session_state.message_type == "error":
+    st.error(st.session_state.message)
+elif st.session_state.message_type == "warning":
+    st.warning(st.session_state.message)
+else:
+    st.info(st.session_state.message)
 
-if st.session_state.guesses:
+# =========================================================
+# GUESS HISTORY
+# =========================================================
+
+st.markdown(
+    '<div class="game-card">'
+    '<div class="section-title">📊 Guess History</div>'
+    '<div class="muted">Every guess brings you closer to the answer.</div>'
+    '</div>',
+    unsafe_allow_html=True,
+)
+
+if st.session_state.history:
     chips = []
-    for number in st.session_state.guesses:
-        if st.session_state.status == "won" and number == st.session_state.secret:
-            chips.append(
-                f'<span class="guess-chip" style="border-color:{good};color:{good}">'
-                f'{number} ✓</span>'
-            )
+
+    for item in reversed(st.session_state.history):
+        guess = item["guess"]
+        result = item["result"]
+
+        if result == "correct":
+            css_class = "chip-correct"
+            symbol = "✓"
+        elif result == "low":
+            css_class = "chip-low"
+            symbol = "↑"
         else:
-            chips.append(f'<span class="guess-chip">{number}</span>')
+            css_class = "chip-high"
+            symbol = "↓"
+
+        chips.append(
+            f'<div class="history-chip {css_class}">'
+            f'{guess} {symbol}'
+            f'</div>'
+        )
 
     st.markdown(
-        '<div class="history">' + "".join(chips) + '</div>',
+        '<div class="history-row">' + "".join(chips) + '</div>',
         unsafe_allow_html=True,
     )
 else:
     st.markdown(
-        '<div class="feedback">🎯 NO GUESSES YET — MAKE YOUR FIRST MOVE!</div>',
+        '<p class="muted" style="text-align:center; padding:18px 0;">'
+        'No guesses yet. Make your first move!'
+        '</p>',
         unsafe_allow_html=True,
+    )
+
+# =========================================================
+# GAME RULES
+# =========================================================
+
+with st.expander("🎮 HOW TO PLAY"):
+    st.markdown(
+        """
+        - 🎯 Guess the hidden number between **1 and 100**.
+        - 🔟 You have a maximum of **10 attempts**.
+        - 📈 **Too low** means the answer is higher.
+        - 📉 **Too high** means the answer is lower.
+        - 🏆 Your score starts at **100 points**.
+        - ⚡ Every incorrect guess reduces your score by **10 points**.
+        - 💯 A first-guess win earns **100 points**.
+        - 🌗 Use the radio buttons at the top to switch between
+          **Dark Mode** and **Light Mode**.
+        """
     )
 
 st.markdown(
-    '<div class="footer">GUESS LAB &nbsp; • &nbsp; INSERT COIN? NO — JUST PLAY.</div>',
+    f"""
+    <div style="text-align:center; margin-top:30px;
+                font-size:0.8rem; opacity:0.65;">
+        MADE FOR THE LOVE OF GAMES · SCORE LIMIT: 100
+    </div>
+    """,
     unsafe_allow_html=True,
 )
